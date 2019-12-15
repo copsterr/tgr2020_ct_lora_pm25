@@ -1,0 +1,2 @@
+ct_usart.c:8:6:MX_LPUART1_UART_Init	8	static
+ct_usart.c:28:6:MX_USART1_UART_Init	8	static
