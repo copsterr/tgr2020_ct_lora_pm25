@@ -46,7 +46,7 @@
 /*!
  * Defines the application data transmission duty cycle. 5s, value in [ms].
  */
-#define APP_TX_DUTYCYCLE                            120000
+#define APP_TX_DUTYCYCLE                            900000
 /*!
  * LoRaWAN Adaptive Data Rate
  * @note Please note that when ADR is enabled the end-device should be static
@@ -154,9 +154,16 @@ static  LoRaParam_t LoRaParamInit = {LORAWAN_ADR_STATE,
 /* Private functions ---------------------------------------------------------*/
 
 
+/* Private Vars --------------------------------------------------------------*/
+uint8_t callTheCops = 0;
 UART_HandleTypeDef huart1;
+//#define SEND_GEO_DATA
+//#define DATA_TOGGLING
+uint8_t send_pm_toggler = 1;
 
-
+// honey vars
+#define HONEY_WARMUP_DURATION 10000
+honey_t honey;
 
 /**
   * @brief  Main program
@@ -180,34 +187,37 @@ int main(void)
   /* Configure the hardware*/
   HW_Init();
 
-  //  init USART1
+  // init USART1
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 9600;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+	Error_Handler();
+  }
 
-      huart1.Instance = USART1;
-      huart1.Init.BaudRate = 9600;
-      huart1.Init.WordLength = UART_WORDLENGTH_8B;
-      huart1.Init.StopBits = UART_STOPBITS_1;
-      huart1.Init.Parity = UART_PARITY_NONE;
-      huart1.Init.Mode = UART_MODE_TX_RX;
-      huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-      huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-      huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-      huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-      if (HAL_UART_Init(&huart1) != HAL_OK)
-      {
-        Error_Handler();
-      }
+  // init User Btn
+  GPIO_InitTypeDef initStruct = {0};
+  initStruct.Mode = GPIO_MODE_IT_RISING;
+  initStruct.Pull = GPIO_PULLUP;
+  initStruct.Speed = GPIO_SPEED_HIGH;
 
+  HW_GPIO_Init(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, &initStruct);
 
   /* USER CODE BEGIN 1 */
   volatile uint32_t time = 0;
   volatile uint32_t time_tick = 0;
   volatile uint32_t time_ms = 0;
 
-
-  honey_t honey;
+  // init pm2.5 module
   honey_init(huart1, &honey);
-
-
 
 
   /* USER CODE END 1 */
@@ -226,18 +236,23 @@ int main(void)
   LoraStartTx(TX_ON_TIMER) ;
 
 
-
   while (1)
   {
-//	  HAL_UART_Transmit(&huart1, (uint8_t*) "Transmit Test\r\n", 15, 1000);
-
 
     if (AppProcessRequest == LORA_SET)
     {
       /*reset notification flag*/
       AppProcessRequest = LORA_RESET;
       /*Send*/
+      PRINTF("STARTING UP PM2.5 MEASUREMENT...\r\n");
+      honey_start(&honey);
+      HAL_Delay(HONEY_WARMUP_DURATION);
+
+      PRINTF("Transmitting PM2.5 Concentration...\r\n");
       Send(NULL);
+
+      honey_stop(&honey);
+      PRINTF("TRANSMISSION COMPLETED.\r\n");
     }
     if (LoraMacProcessRequest == LORA_SET)
     {
@@ -287,6 +302,8 @@ static void Send(void *context)
   uint16_t humidity;
   uint8_t batteryLevel;
   sensor_t sensor_data;
+  uint16_t pm2_5;
+  uint8_t sensor_err = 0;
 
   uint8_t lowBatt = 0; // Indicates that battery is low
 
@@ -314,6 +331,17 @@ static void Send(void *context)
 #endif
 
   BSP_sensor_Read(&sensor_data);
+
+  if (honey_read(&honey) == CMD_RESP_SUCCESS) {
+	  PRINTF("[s] Read PM2.5 Success!\r\n");
+	  pm2_5 = honey.pm2_5;
+	  if (pm2_5 == 191) {
+		  pm2_5 = 190;
+	  }
+  } else {
+	  PRINTF("[e] Read PM2.5 Error!\r\n");
+	  sensor_err = 1;
+  }
 
 #ifdef CAYENNE_LPP
   uint8_t cchannel = 0;
@@ -365,26 +393,33 @@ static void Send(void *context)
   AppData.Port = LORAWAN_APP_PORT;
 
 #if defined( REGION_US915 ) || defined ( REGION_AU915 ) || defined ( REGION_AS923 )
-  if (lowBatt) {
+  if (lowBatt || sensor_err) {
+	AppData.Buff[i++] = 17;
 	AppData.Buff[i++] = 191;
   } else {
-//	AppData.Buff[i++] = AppLedStateOn;
-//    AppData.Buff[i++] = (pressure >> 8) & 0xFF;
-//    AppData.Buff[i++] = pressure & 0xFF;
-    AppData.Buff[i++] = (temperature >> 8) & 0xFF;
-    AppData.Buff[i++] = temperature & 0xFF;
-    AppData.Buff[i++] = (humidity >> 8) & 0xFF;
-    AppData.Buff[i++] = humidity & 0xFF;
-    AppData.Buff[i++] = batteryLevel;
-    AppData.Buff[i++] = (latitude >> 16) & 0xFF;
-    AppData.Buff[i++] = (latitude >> 8) & 0xFF;
-    AppData.Buff[i++] = latitude & 0xFF;
-    AppData.Buff[i++] = (longitude >> 16) & 0xFF;
-    AppData.Buff[i++] = (longitude >> 8) & 0xFF;
-    AppData.Buff[i++] = longitude & 0xFF;
-//    AppData.Buff[i++] = (altitudeGps >> 8) & 0xFF;
-//    AppData.Buff[i++] = altitudeGps & 0xFF;
-  }
+
+#ifdef DATA_TOGGLING
+	if (send_pm_toggler) {
+		PRINTF("[i] sending pm2.5 data...\r\n");
+		AppData.Buff[i++] = 17;
+		AppData.Buff[i++] = pm2_5;
+	} else {
+		PRINTF("[i] sending geolocation data...\r\n");
+		AppData.Buff[i++] = 17;
+		AppData.Buff[i++] = (latitude >> 16) & 0xFF;
+		AppData.Buff[i++] = (latitude >> 8) & 0xFF;
+		AppData.Buff[i++] = latitude & 0xFF;
+		AppData.Buff[i++] = (longitude >> 16) & 0xFF;
+		AppData.Buff[i++] = (longitude >> 8) & 0xFF;
+		AppData.Buff[i++] = longitude & 0xFF;
+	}
+	send_pm_toggler = !send_pm_toggler;
+#else
+  	PRINTF("[i] sending pm2.5 data...\r\n");
+  	AppData.Buff[i++] = 17;
+  	AppData.Buff[i++] = pm2_5;
+#endif
+}
 
 #else  /* not REGION_XX915 */
   // AppData.Buff[i++] = AppLedStateOn;
