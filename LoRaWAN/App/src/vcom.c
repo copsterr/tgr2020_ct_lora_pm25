@@ -151,7 +151,8 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
   //   GPIO_InitStruct.Alternate = GPIO_AF6_LPUART1;
   //   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
   // }
-  else if (huart->Instance == USART1) {
+  else if (huart->Instance == USART1)
+  {
 	  /* USER CODE BEGIN USART1_MspInit 0 */
 
 	    /* USER CODE END USART1_MspInit 0 */

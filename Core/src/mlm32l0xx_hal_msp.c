@@ -161,7 +161,7 @@ void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
   */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  HW_GPIO_IrqHandler(GPIO_Pin);
+	HW_GPIO_IrqHandler(GPIO_Pin);
 }
 
 /**

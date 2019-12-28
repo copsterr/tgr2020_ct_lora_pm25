@@ -47,6 +47,7 @@
  * Defines the application data transmission duty cycle. 5s, value in [ms].
  */
 #define APP_TX_DUTYCYCLE                            60000
+#define SETTING_MODE_DUTYCYCLE						5000
 /*!
  * LoRaWAN Adaptive Data Rate
  * @note Please note that when ADR is enabled the end-device should be static
@@ -135,6 +136,7 @@ LoraFlagStatus AppProcessRequest = LORA_RESET;
 static uint8_t AppLedStateOn = RESET;
 
 static TimerEvent_t TxTimer;
+static TimerEvent_t SettingTimer;
 
 #ifdef USE_B_L072Z_LRWAN1
 /*!
@@ -153,21 +155,30 @@ static  LoRaParam_t LoRaParamInit = {LORAWAN_ADR_STATE,
 
 /* Private functions ---------------------------------------------------------*/
 static void initUserBtn(void);
+static void initUart1(void);
+static void initTim6(void);
+
+static void OnSettingModeElapsed(void *context);
+static void StartSettingModeElapsed();
 
 
 /* Private Vars --------------------------------------------------------------*/
-uint8_t callTheCops = 0;
 UART_HandleTypeDef huart1;
+TIM_HandleTypeDef  htim6;
+
 //#define SEND_GEO_DATA // for sending only geo data
 #define DATA_TOGGLING // for toggling data sending between pm2.5 and geolocation
 uint8_t send_pm_toggler = 1;
 
-// CMD mode
-
+// mode control
+volatile uint8_t setting_mode = 1;
+volatile uint8_t setting_mode_timeout_count = 0;
+#define SETTING_MODE_TIMEOUT_COUNT_MAX 25
 
 // honey vars
 #define HONEY_WARMUP_DURATION 10000
 honey_t honey;
+
 
 /**
   * @brief  Main program
@@ -191,23 +202,9 @@ int main(void)
   /* Configure the hardware*/
   HW_Init();
 
-  // init USART1
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 9600;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
-  {
-	Error_Handler();
-  }
-
-  // init user button
+  // Init connectivity peripherals
+  initTim6();
+  initUart1();
   initUserBtn();
 
   /* USER CODE BEGIN 1 */
@@ -217,6 +214,7 @@ int main(void)
 
   // init pm2.5 module
   honey_init(huart1, &honey);
+
 
   /* USER CODE END 1 */
 
@@ -231,55 +229,77 @@ int main(void)
 
   LORA_Join();
 
-  LoraStartTx(TX_ON_TIMER) ;
+//  LoraStartTx(TX_ON_TIMER);
 
   // LOOP
   while (1)
   {
-	if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_2) == 0) {
-		PRINTF("BTN pressed!\r\n");
-		LED_On(LED_RED2);
-		HAL_Delay(1000);
-		LED_Off(LED_RED2);
+	if (!setting_mode) {
+		// polling for user to press userbtn input
+		if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_2) == 0) {
+			HAL_Delay(1000); // debouncing prevention
+
+			// stop txtimer and start elapsing timer
+			TimerStop(&TxTimer);
+			StartSettingModeElapsed();
+
+			setting_mode = 1; // change mode
+
+			PRINTF("\r\n[i] TxTimer Stopped\r\n[i] Entering Setting Mode...\r\n\r\n");
+		}
+
+	/* Normal Mode Start ---------------------------------------------------- */
+		if (AppProcessRequest == LORA_SET)
+		{
+		  /*reset notification flag*/
+		  AppProcessRequest = LORA_RESET;
+		  /*Send*/
+		  PRINTF("STARTING UP PM2.5 MEASUREMENT...\r\n");
+		  honey_start(&honey);
+		  HAL_Delay(HONEY_WARMUP_DURATION);
+
+		  PRINTF("Transmitting PM2.5 Concentration...\r\n");
+		  Send(NULL);
+
+		  honey_stop(&honey);
+		  PRINTF("TRANSMISSION COMPLETED.\r\n");
+		}
+		if (LoraMacProcessRequest == LORA_SET)
+		{
+		  /*reset notification xcflag*/
+		  LoraMacProcessRequest = LORA_RESET;
+		  LoRaMacProcess();
+		}
+		/*If a flag is set at this point, mcu must not enter low power and must loop*/
+		DISABLE_IRQ();
+
+	    /* if an interrupt has occurred after DISABLE_IRQ, it is kept pending
+	     * and cortex will not enter low power anyway  */
+		if ((LoraMacProcessRequest != LORA_SET) && (AppProcessRequest != LORA_SET))
+		{
+#ifndef LOW_POWER_DISABLE
+    LPM_EnterLowPower();
+#endif
+	    }
+
+	    ENABLE_IRQ();
+	/* Normal Mode End ------------------------------------------------------ */
+	}
+	else {
+	/* Setting Mode Start --------------------------------------------------- */
+		// timeout control
+		if (setting_mode_timeout_count == SETTING_MODE_TIMEOUT_COUNT_MAX) {
+			PRINTF("\r\n[i] SETTING MODE TIMEOUT, entering normal mode...");
+			TimerStop(&SettingTimer); // stop setting mode timer
+			TimerReset(&SettingTimer);
+			setting_mode = 0; // change mode to normal
+			LoraStartTx(TX_ON_TIMER);
+		}
+
+
+	/* Setting Mode End ----------------------------------------------------- */
 	}
 
-    if (AppProcessRequest == LORA_SET)
-    {
-      /*reset notification flag*/
-      AppProcessRequest = LORA_RESET;
-      /*Send*/
-      PRINTF("STARTING UP PM2.5 MEASUREMENT...\r\n");
-      honey_start(&honey);
-      HAL_Delay(HONEY_WARMUP_DURATION);
-
-      PRINTF("Transmitting PM2.5 Concentration...\r\n");
-      Send(NULL);
-
-      honey_stop(&honey);
-      PRINTF("TRANSMISSION COMPLETED.\r\n");
-    }
-    if (LoraMacProcessRequest == LORA_SET)
-    {
-      /*reset notification xcflag*/
-      LoraMacProcessRequest = LORA_RESET;
-      LoRaMacProcess();
-    }
-    /*If a flag is set at this point, mcu must not enter low power and must loop*/
-    DISABLE_IRQ(); 
-
-    /* if an interrupt has occurred after DISABLE_IRQ, it is kept pending
-     * and cortex will not enter low power anyway  */
-    if ((LoraMacProcessRequest != LORA_SET) && (AppProcessRequest != LORA_SET))
-    {
-#ifndef LOW_POWER_DISABLE
-      LPM_EnterLowPower();
-#endif
-    }
-
-    ENABLE_IRQ();
-
-    /* USER CODE BEGIN 2 */
-    /* USER CODE END 2 */
   }
 }
 
@@ -387,6 +407,7 @@ static void Send(void *context)
 //  humidity    = (uint16_t)(sensor_data.humidity * 10);            /* in %*10     */
 //  latitude = sensor_data.latitude;
 //  longitude = sensor_data.longitude;
+
 //lat 13.73654, long 100.52877 of CU Engineering
   latitude = 1373654;
   longitude = 10052877;
@@ -531,6 +552,20 @@ static void LORA_RxData(lora_AppData_t *AppData)
   /* USER CODE END 4 */
 }
 
+
+static void OnSettingModeElapsed(void *context)
+{
+	TimerStart(&SettingTimer);
+	setting_mode_timeout_count++; // increment timeout counter
+}
+
+static void StartSettingModeElapsed()
+{
+	TimerInit(&SettingTimer, OnSettingModeElapsed);
+	TimerSetValue(&SettingTimer,  SETTING_MODE_DUTYCYCLE);
+	OnSettingModeElapsed(NULL);
+}
+
 static void OnTxTimerEvent(void *context)
 {
   /*Wait for next tx slot*/
@@ -632,6 +667,60 @@ static void initUserBtn(void)
 
 //	HAL_NVIC_SetPriority(EXTI2_3_IRQn, 0, 0);
 //	HAL_NVIC_EnableIRQ(EXTI2_3_IRQn);
+//	HW_GPIO_Init(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, &GPIO_InitStruct);
+//	HW_GPIO_SetIrq(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, 0, printStuff);
 }
+
+static void initUart1(void)
+{
+	huart1.Instance = USART1;
+	huart1.Init.BaudRate = 9600;
+	huart1.Init.WordLength = UART_WORDLENGTH_8B;
+	huart1.Init.StopBits = UART_STOPBITS_1;
+	huart1.Init.Parity = UART_PARITY_NONE;
+	huart1.Init.Mode = UART_MODE_TX_RX;
+	huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+	huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+	huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+	huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+	if (HAL_UART_Init(&huart1) != HAL_OK)
+	{
+		Error_Handler();
+	}
+}
+
+static void initTim6(void)
+{
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 47999;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 999;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
+{
+  if(htim_base->Instance==TIM6)
+  {
+    /* Peripheral clock enable */
+    __HAL_RCC_TIM6_CLK_ENABLE();
+    /* TIM6 interrupt Init */
+    HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
+  }
+}
+
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
