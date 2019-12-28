@@ -16,7 +16,7 @@ RM := rm -rf
 -include Middlewares/LoRaWAN/Crypto/subdir.mk
 -include Drivers/STM32L0xx_HAL_Driver/subdir.mk
 -include Drivers/CMSIS/subdir.mk
--include Drivers/BSP/X_NUCLEO_IKS01A2/subdir.mk
+-include Drivers/BSP/X_NUCLEO_IKS01A1/subdir.mk
 -include Drivers/BSP/Components/subdir.mk
 -include Drivers/BSP/CMWX1ZZABZ-0xx/subdir.mk
 -include B-L072Z-LRWAN1/subdir.mk

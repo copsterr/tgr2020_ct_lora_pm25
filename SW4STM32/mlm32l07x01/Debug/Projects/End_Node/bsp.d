@@ -51,23 +51,7 @@ Projects/End_Node/bsp.o: \
  ../../../LoRaWAN/App/inc/debug.h \
  ../../../../../../../../Middlewares/Third_Party/LoRaWAN/Utilities/timeServer.h \
  ../../../../../../../../Middlewares/Third_Party/LoRaWAN/Utilities/utilities.h \
- ../../../LoRaWAN/App/inc/bsp.h \
- ../../../../../../../../Drivers/BSP/X_NUCLEO_IKS01A2/x_nucleo_iks01a2_humidity.h \
- ../../../../../../../../Drivers/BSP/Components/hts221/HTS221_Driver_HL.h \
- ../../../../../../../../Drivers/BSP/Components/Common/humidity.h \
- ../../../../../../../../Drivers/BSP/Components/Common/sensor.h \
- ../../../../../../../../Drivers/BSP/Components/Common/component.h \
- ../../../../../../../../Drivers/BSP/Components/Common/temperature.h \
- ../../../../../../../../Drivers/BSP/Components/hts221/HTS221_Driver.h \
- ../../../../../../../../Drivers/BSP/X_NUCLEO_IKS01A2/x_nucleo_iks01a2.h \
- ../../../../../../../../Drivers/BSP/Components/Common/accelerometer.h \
- ../../../../../../../../Drivers/BSP/Components/Common/gyroscope.h \
- ../../../../../../../../Drivers/BSP/Components/Common/magnetometer.h \
- ../../../../../../../../Drivers/BSP/Components/Common/pressure.h \
- ../../../../../../../../Drivers/BSP/X_NUCLEO_IKS01A2/x_nucleo_iks01a2_pressure.h \
- ../../../../../../../../Drivers/BSP/Components/lps22hb/LPS22HB_Driver_HL.h \
- ../../../../../../../../Drivers/BSP/Components/lps22hb/LPS22HB_Driver.h \
- ../../../../../../../../Drivers/BSP/X_NUCLEO_IKS01A2/x_nucleo_iks01a2_temperature.h
+ ../../../LoRaWAN/App/inc/bsp.h
 
 ../../../LoRaWAN/App/inc/hw.h:
 
@@ -178,35 +162,3 @@ Projects/End_Node/bsp.o: \
 ../../../../../../../../Middlewares/Third_Party/LoRaWAN/Utilities/utilities.h:
 
 ../../../LoRaWAN/App/inc/bsp.h:
-
-../../../../../../../../Drivers/BSP/X_NUCLEO_IKS01A2/x_nucleo_iks01a2_humidity.h:
-
-../../../../../../../../Drivers/BSP/Components/hts221/HTS221_Driver_HL.h:
-
-../../../../../../../../Drivers/BSP/Components/Common/humidity.h:
-
-../../../../../../../../Drivers/BSP/Components/Common/sensor.h:
-
-../../../../../../../../Drivers/BSP/Components/Common/component.h:
-
-../../../../../../../../Drivers/BSP/Components/Common/temperature.h:
-
-../../../../../../../../Drivers/BSP/Components/hts221/HTS221_Driver.h:
-
-../../../../../../../../Drivers/BSP/X_NUCLEO_IKS01A2/x_nucleo_iks01a2.h:
-
-../../../../../../../../Drivers/BSP/Components/Common/accelerometer.h:
-
-../../../../../../../../Drivers/BSP/Components/Common/gyroscope.h:
-
-../../../../../../../../Drivers/BSP/Components/Common/magnetometer.h:
-
-../../../../../../../../Drivers/BSP/Components/Common/pressure.h:
-
-../../../../../../../../Drivers/BSP/X_NUCLEO_IKS01A2/x_nucleo_iks01a2_pressure.h:
-
-../../../../../../../../Drivers/BSP/Components/lps22hb/LPS22HB_Driver_HL.h:
-
-../../../../../../../../Drivers/BSP/Components/lps22hb/LPS22HB_Driver.h:
-
-../../../../../../../../Drivers/BSP/X_NUCLEO_IKS01A2/x_nucleo_iks01a2_temperature.h:

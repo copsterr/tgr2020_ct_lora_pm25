@@ -46,7 +46,7 @@
 /*!
  * Defines the application data transmission duty cycle. 5s, value in [ms].
  */
-#define APP_TX_DUTYCYCLE                            900000
+#define APP_TX_DUTYCYCLE                            60000
 /*!
  * LoRaWAN Adaptive Data Rate
  * @note Please note that when ADR is enabled the end-device should be static
@@ -152,14 +152,18 @@ static  LoRaParam_t LoRaParamInit = {LORAWAN_ADR_STATE,
                                     };
 
 /* Private functions ---------------------------------------------------------*/
+static void initUserBtn(void);
 
 
 /* Private Vars --------------------------------------------------------------*/
 uint8_t callTheCops = 0;
 UART_HandleTypeDef huart1;
-//#define SEND_GEO_DATA
-//#define DATA_TOGGLING
+//#define SEND_GEO_DATA // for sending only geo data
+#define DATA_TOGGLING // for toggling data sending between pm2.5 and geolocation
 uint8_t send_pm_toggler = 1;
+
+// CMD mode
+
 
 // honey vars
 #define HONEY_WARMUP_DURATION 10000
@@ -203,13 +207,8 @@ int main(void)
 	Error_Handler();
   }
 
-  // init User Btn
-  GPIO_InitTypeDef initStruct = {0};
-  initStruct.Mode = GPIO_MODE_IT_RISING;
-  initStruct.Pull = GPIO_PULLUP;
-  initStruct.Speed = GPIO_SPEED_HIGH;
-
-  HW_GPIO_Init(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, &initStruct);
+  // init user button
+  initUserBtn();
 
   /* USER CODE BEGIN 1 */
   volatile uint32_t time = 0;
@@ -218,7 +217,6 @@ int main(void)
 
   // init pm2.5 module
   honey_init(huart1, &honey);
-
 
   /* USER CODE END 1 */
 
@@ -235,9 +233,15 @@ int main(void)
 
   LoraStartTx(TX_ON_TIMER) ;
 
-
+  // LOOP
   while (1)
   {
+	if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_2) == 0) {
+		PRINTF("BTN pressed!\r\n");
+		LED_On(LED_RED2);
+		HAL_Delay(1000);
+		LED_Off(LED_RED2);
+	}
 
     if (AppProcessRequest == LORA_SET)
     {
@@ -297,15 +301,14 @@ static void LORA_HasJoined(void)
 static void Send(void *context)
 {
   /* USER CODE BEGIN 3 */
-  uint16_t pressure;
-  int16_t temperature;
-  uint16_t humidity;
-  uint8_t batteryLevel;
-  sensor_t sensor_data;
-  uint16_t pm2_5;
-  uint8_t sensor_err = 0;
-
-  uint8_t lowBatt = 0; // Indicates that battery is low
+//  uint16_t pressure;
+//  int16_t temperature;
+//  uint16_t humidity;
+//  sensor_t sensor_data;
+  uint8_t  batteryLevel;
+  uint16_t pm2_5;			// pm2.5 concentration
+  uint8_t  sensor_err = 0;  // if sensor has error
+  uint8_t  lowBatt = 0; 	// Indicates that battery is low
 
   if (LORA_JoinStatus() != LORA_SET)
   {
@@ -317,7 +320,7 @@ static void Send(void *context)
   TVL1(PRINTF("SEND REQUEST\n\r");)
 #ifndef CAYENNE_LPP
   int32_t latitude, longitude = 0;
-  uint16_t altitudeGps = 0;
+//  uint16_t altitudeGps = 0;
 #endif
 
 #ifdef USE_B_L072Z_LRWAN1
@@ -330,8 +333,9 @@ static void Send(void *context)
   TimerStart(&TxLedTimer);
 #endif
 
-  BSP_sensor_Read(&sensor_data);
+//  BSP_sensor_Read(&sensor_data);
 
+  // read pm2.5 from Honeywell sensor
   if (honey_read(&honey) == CMD_RESP_SUCCESS) {
 	  PRINTF("[s] Read PM2.5 Success!\r\n");
 	  pm2_5 = honey.pm2_5;
@@ -377,16 +381,20 @@ static void Send(void *context)
 #endif  /* REGION_XX915 */
 #else  /* not CAYENNE_LPP */
 
-  temperature = (int16_t)(sensor_data.temperature * 100);         /* in �C * 100 */
-  pressure    = (uint16_t)(sensor_data.pressure * 100 / 10);      /* in hPa / 10 */
-  humidity    = (uint16_t)(sensor_data.humidity * 10);            /* in %*10     */
-  latitude = sensor_data.latitude;
-  longitude = sensor_data.longitude;
+
+//  temperature = (int16_t)(sensor_data.temperature * 100);         /* in �C * 100 */
+//  pressure    = (uint16_t)(sensor_data.pressure * 100 / 10);      /* in hPa / 10 */
+//  humidity    = (uint16_t)(sensor_data.humidity * 10);            /* in %*10     */
+//  latitude = sensor_data.latitude;
+//  longitude = sensor_data.longitude;
+//lat 13.73654, long 100.52877 of CU Engineering
+  latitude = 1373654;
+  longitude = 10052877;
   uint32_t i = 0;
 
+  // check battery level
   batteryLevel = LORA_GetBatteryLevel();                      /* 1 (very low) to 254 (fully charged) */
-
-  if (batteryLevel < 10) {
+  if (batteryLevel < 5) {
     lowBatt = 1;
   }
 
@@ -394,6 +402,7 @@ static void Send(void *context)
 
 #if defined( REGION_US915 ) || defined ( REGION_AU915 ) || defined ( REGION_AS923 )
   if (lowBatt || sensor_err) {
+	// if sensor is error or battery is low send 191
 	AppData.Buff[i++] = 17;
 	AppData.Buff[i++] = 191;
   } else {
@@ -446,21 +455,6 @@ static void Send(void *context)
   AppData.BuffSize = i;
 
   LORA_send(&AppData, LORAWAN_DEFAULT_CONFIRM_MSG_STATE);
-
-/* LORA TEST SEND */
-  // if (LORA_JoinStatus() != LORA_SET)
-  // {
-  //   LORA_Join();
-  //   return;
-  // }
-
-  // char message[] = "Hello World Copter!";
-
-  // sprintf((char*) AppData.Buff, "%s", message);
-  // AppData.BuffSize = strlen((char*) AppData.Buff);
-  // AppData.Port = LORAWAN_APP_PORT;
-
-  // LORA_send(&AppData, LORAWAN_DEFAULT_CONFIRM_MSG_STATE);
 
   /* USER CODE END 3 */
 }
@@ -624,4 +618,20 @@ static void OnTimerLedEvent(void *context)
   LED_Off(LED_RED1) ;
 }
 #endif
+
+static void initUserBtn(void)
+{
+	GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+	__HAL_RCC_GPIOB_CLK_ENABLE();
+
+	GPIO_InitStruct.Pin = GPIO_PIN_2;
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+//	HAL_NVIC_SetPriority(EXTI2_3_IRQn, 0, 0);
+//	HAL_NVIC_EnableIRQ(EXTI2_3_IRQn);
+}
+
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
