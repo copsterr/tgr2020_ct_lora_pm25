@@ -156,14 +156,21 @@ static  LoRaParam_t LoRaParamInit = {LORAWAN_ADR_STATE,
 /* Private functions ---------------------------------------------------------*/
 static void initUserBtn(void);
 static void initUart1(void);
+static void initLpUart1(void);
 static void initTim6(void);
 
+// Setting Mode fns
 static void OnSettingModeElapsed(void *context);
 static void StartSettingModeElapsed();
+
+// CLI fns
+void extractCmd(uint8_t cmd[], uint8_t* cmdtype, uint8_t* cmdarg);
+int32_t ascii2hex_num(uint8_t src[]);
 
 
 /* Private Vars --------------------------------------------------------------*/
 UART_HandleTypeDef huart1;
+UART_HandleTypeDef hlpuart1;
 TIM_HandleTypeDef  htim6;
 
 //#define SEND_GEO_DATA // for sending only geo data
@@ -171,7 +178,7 @@ TIM_HandleTypeDef  htim6;
 uint8_t send_pm_toggler = 1;
 
 // mode control
-volatile uint8_t setting_mode = 1;
+volatile uint8_t setting_mode = 0;
 volatile uint8_t setting_mode_timeout_count = 0;
 #define SETTING_MODE_TIMEOUT_COUNT_MAX 25
 
@@ -179,6 +186,29 @@ volatile uint8_t setting_mode_timeout_count = 0;
 #define HONEY_WARMUP_DURATION 10000
 honey_t honey;
 
+/* CLI VARS Begin ------------------------------------------------------------*/
+#define RX_BUFF_SIZE 80
+
+typedef struct lineBuff {
+  uint8_t fullFlag;
+  uint8_t cmdReady;
+  uint8_t count;
+  uint8_t buff[RX_BUFF_SIZE];
+} lineBuff;
+
+lineBuff cmdBuff;
+uint8_t* ptrBuff = &cmdBuff.buff[0];
+
+HAL_StatusTypeDef status = HAL_OK;
+
+// cmd prompts
+uint8_t prompt[] = "\r\nchulanaruk > ";
+uint8_t cmd_fail[] = "Error! Command not recognised.";
+uint8_t cmd_overflow[] = "Error! Buffer overflowed. Restarting buffer...";
+
+uint8_t reflect_ch = 0; // used for character reflection
+uint8_t backspace_ch = 0;
+/* CLI VARS End --------------------------------------------------------------*/
 
 /**
   * @brief  Main program
@@ -205,6 +235,7 @@ int main(void)
   // Init connectivity peripherals
   initTim6();
   initUart1();
+  initLpUart1();
   initUserBtn();
 
   /* USER CODE BEGIN 1 */
@@ -213,7 +244,7 @@ int main(void)
   volatile uint32_t time_ms = 0;
 
   // init pm2.5 module
-  honey_init(huart1, &honey);
+  honey_init(hlpuart1, &honey);
 
 
   /* USER CODE END 1 */
@@ -229,7 +260,7 @@ int main(void)
 
   LORA_Join();
 
-//  LoraStartTx(TX_ON_TIMER);
+  LoraStartTx(TX_ON_TIMER);
 
   // LOOP
   while (1)
@@ -239,13 +270,28 @@ int main(void)
 		if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_2) == 0) {
 			HAL_Delay(1000); // debouncing prevention
 
+			PRINTF("\r\n[i] Entering Setting Mode...\r\n\r\n");
+
 			// stop txtimer and start elapsing timer
 			TimerStop(&TxTimer);
 			StartSettingModeElapsed();
 
 			setting_mode = 1; // change mode
 
-			PRINTF("\r\n[i] TxTimer Stopped\r\n[i] Entering Setting Mode...\r\n\r\n");
+			// CLI variables init
+			status = HAL_OK;
+			cmdBuff.fullFlag = 0;
+			cmdBuff.cmdReady = 0;
+			cmdBuff.count    = 0;
+			memset(&cmdBuff.buff, 0x00, sizeof(cmdBuff.buff));
+
+			// begin reception
+			status = HAL_UART_Receive_IT(&huart1, &cmdBuff.buff[0], sizeof(uint8_t));
+			assert_param(status == HAL_OK);
+
+			// show prompt
+			status = HAL_UART_Transmit(&huart1, &prompt[0], sizeof(prompt), 100);
+			assert_param(status == HAL_OK);
 		}
 
 	/* Normal Mode Start ---------------------------------------------------- */
@@ -289,13 +335,175 @@ int main(void)
 	/* Setting Mode Start --------------------------------------------------- */
 		// timeout control
 		if (setting_mode_timeout_count == SETTING_MODE_TIMEOUT_COUNT_MAX) {
-			PRINTF("\r\n[i] SETTING MODE TIMEOUT, entering normal mode...");
+			PRINTF("\r\n[i] SETTING MODE TIMEOUT, entering normal mode...\r\n");
 			TimerStop(&SettingTimer); // stop setting mode timer
 			TimerReset(&SettingTimer);
 			setting_mode = 0; // change mode to normal
-			LoraStartTx(TX_ON_TIMER);
+			LoraStartTx(TX_ON_TIMER); // start txtimer
 		}
 
+/* CLI Control Start ---------------------------------------------------------*/
+		// COMMAND PROCESSING
+		if (cmdBuff.fullFlag) {
+			// By this point the UART interrupts have been disabled
+			// Send error message
+			status = HAL_UART_Transmit_IT(&huart1, &cmd_overflow[0], sizeof(cmd_overflow));
+			assert_param(status == HAL_OK);
+
+			// Clear full flag, count, and buffer
+			cmdBuff.count = 0;
+			cmdBuff.fullFlag = 0;
+			memset(&cmdBuff.buff, 0x00, sizeof(cmdBuff.buff));
+
+			// Enable reception again
+			status = HAL_UART_Receive_IT(&huart1, &cmdBuff.buff[0], sizeof(uint8_t));
+			assert_param(status == HAL_OK);
+		}
+
+		if (backspace_ch) {
+			status = HAL_UART_Transmit_IT(&huart1, (uint8_t *) "\177", sizeof(uint8_t));
+			assert_param(status == HAL_OK);
+			backspace_ch = 0;
+		}
+
+		if (cmdBuff.cmdReady) {
+			// set the last char of a command to null terminator
+			cmdBuff.buff[cmdBuff.count] = '\0';
+
+			if (cmdBuff.count > 0) {
+				// process command
+				// extract string to command type and positional arguments
+				uint8_t cmd_type[10] = {0};
+				uint8_t cmd_arg[5] = {0};
+				int32_t cmd_argval = 0;
+
+				extractCmd(cmdBuff.buff, cmd_type, cmd_arg);
+				cmd_argval = ascii2hex_num(cmd_arg);
+
+				if(strcmp("setcoef", (const char*)cmd_type) == 0) {
+					if (cmd_argval >= 30 && cmd_argval <= 200) {
+						// argument is correct
+						// unlock eeprom
+						if ((FLASH->PECR & FLASH_PECR_PELOCK) != 0)
+						{
+							FLASH->PEKEYR = FLASH_PEKEY1;
+							FLASH->PEKEYR = FLASH_PEKEY2;
+						}
+
+						// write data to eeprom
+						*(uint8_t *)(DATA_EEPROM_BASE) = cmd_argval;
+
+						// lock eeprom
+						FLASH->PECR |= FLASH_PECR_PELOCK;
+
+						// set coef at sensor
+						honey_set_coef(&honey, cmd_argval);
+
+						status = HAL_UART_Transmit_IT(&huart1, (uint8_t*) "\r\nSet Coef Success!\r\n", \
+							strlen("\r\nSet Coef Success!\r\n"));
+						assert_param(status == HAL_OK);
+					}
+					else {
+						// argument error
+						status = HAL_UART_Transmit_IT(&huart1, (uint8_t*) "\r\nSet Coef Argument Error!\r\n", \
+								strlen("\r\nSet Coef Argument Error!\r\n"));
+						assert_param(status == HAL_OK);
+					}
+				}
+				else if (strcmp("readcoef", (const char*)cmd_type) == 0) {
+					uint8_t temp_resp[50] = {0};
+
+					// read from eeprom
+					uint32_t eepromread = *((uint32_t*) DATA_EEPROM_BASE);
+					sprintf(temp_resp, "\r\nCustomer Coefficient is %i\r\n", eepromread);
+					status = HAL_UART_Transmit_IT(&huart1, (uint8_t*) temp_resp, \
+							strlen(temp_resp));
+					assert_param(status == HAL_OK);
+		        }
+				else if (strcmp("watchpm", (const char*)cmd_type) == 0) {
+					uint8_t temp_resp[50] = {0};
+
+					sprintf(temp_resp, "\r\nPM2.5 concentration is %i ug\r\n", honey.pm2_5);
+					status = HAL_UART_Transmit_IT(&huart1, (uint8_t*) temp_resp, \
+						strlen(temp_resp));
+					assert_param(status == HAL_OK);
+				}
+				else if (strcmp("measure", (const char*)cmd_type) == 0) {
+					HAL_UART_Transmit_IT(&huart1, (uint8_t*) "\r\nStarting sensor..., measuring...\r\n",
+						strlen("\r\nStarting sensor..., measuring...\r\n"));
+					honey_start(&honey);
+					HAL_Delay(HONEY_WARMUP_DURATION);
+
+					HAL_UART_Abort(&huart1); // stop any interrupt on uart1
+
+					if (honey_read(&honey) == CMD_RESP_SUCCESS) {
+						uint8_t pm2_5 = 0;
+						uint8_t temp_resp[50] = {0};
+
+						pm2_5 = honey.pm2_5;
+						if (pm2_5 == 191) {
+							pm2_5 = 190;
+						}
+
+						sprintf(temp_resp, "\r\nMeauring completed. PM2.5 is %i ug\r\n", pm2_5);
+						HAL_UART_Transmit_IT(&huart1, (uint8_t*) temp_resp,	strlen(temp_resp));
+					} else {
+						HAL_UART_Transmit_IT(&huart1, (uint8_t*) "Sensor Error!\r\n", \
+							strlen("Sensor Error!\r\n"));
+					}
+
+					honey_stop(&honey);
+				}
+				else if (strcmp("check", (const char*)cmd_type) == 0) {
+					if (honey_stop(&honey) == CMD_RESP_SUCCESS) {
+						HAL_UART_Transmit_IT(&huart1, (uint8_t*) "\r\nSensor OK.\r\n",	strlen("\r\nSensor OK.\r\n"));
+					}
+					else {
+						HAL_UART_Transmit_IT(&huart1, (uint8_t*) "\r\nSensor Error! Please Check Connection.\r\n",	strlen("\r\nSensor Error! Please Check Connection.\r\n"));
+					}
+				}
+				else if (strcmp("exit", (const char*)cmd_type) == 0) {
+					HAL_UART_Abort(&huart1); // stop interrupts
+					status = HAL_UART_Transmit(&huart1, (uint8_t*) "\r\nSetting Mode Exited.\r\n", \
+						strlen("\r\nSetting Mode Exited.\r\n"), 100);
+					assert_param(status == HAL_OK);
+
+					TimerStop(&SettingTimer); // stop setting mode timer
+					TimerReset(&SettingTimer);
+					setting_mode = 0; // change mode to normal
+					LoraStartTx(TX_ON_TIMER); // start txtimer
+				}
+		        else {
+		          status = HAL_UART_Transmit_IT(&huart1, (uint8_t*) "\r\nCommand Error, Please retry.\r\n", \
+		          strlen("\r\nCommand Error, Please retry.\r\n"));
+		          assert_param(status == HAL_OK);
+		        }
+		      }
+		      else {
+		        // nothing to process, give prompt
+		        status = HAL_UART_Transmit(&huart1, &prompt[0], sizeof(prompt), 100);
+		        assert_param(status == HAL_OK);
+		      }
+
+		      // Clear ready flag, count, and buffer
+		      cmdBuff.count = 0;
+		      cmdBuff.cmdReady = 0;
+		      memset(&cmdBuff.buff, 0x00, sizeof(cmdBuff.buff));
+
+		      // Enable reception again
+		      status = HAL_UART_Receive_IT(&huart1, &cmdBuff.buff[0], sizeof(uint8_t));
+		      assert_param(status == HAL_OK);
+		    }
+		    else {
+		      if (reflect_ch) {
+		        // reflect character back to terminal
+		        status = HAL_UART_Transmit_IT(&huart1, &cmdBuff.buff[cmdBuff.count - 1], sizeof(uint8_t));
+		        assert_param(status == HAL_OK);
+
+		        reflect_ch = 0;
+		      }
+		    }
+/* CLI Control End -----------------------------------------------------------*/
 
 	/* Setting Mode End ----------------------------------------------------- */
 	}
@@ -720,6 +928,147 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
     HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 1, 0);
     HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
   }
+}
+
+static void initLpUart1(void)
+{
+  hlpuart1.Instance = LPUART1;
+  hlpuart1.Init.BaudRate = 9600;
+  hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
+  hlpuart1.Init.StopBits = UART_STOPBITS_1;
+  hlpuart1.Init.Parity = UART_PARITY_NONE;
+  hlpuart1.Init.Mode = UART_MODE_TX_RX;
+  hlpuart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  hlpuart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  hlpuart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&hlpuart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+void USART1_IRQHandler(void)
+{
+  /* USER CODE BEGIN USART1_IRQn 0 */
+
+  /* USER CODE END USART1_IRQn 0 */
+  HAL_UART_IRQHandler(&huart1);
+  /* USER CODE BEGIN USART1_IRQn 1 */
+
+  /* USER CODE END USART1_IRQn 1 */
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+	HAL_StatusTypeDef status = HAL_OK;
+
+	  if (huart == &huart1) {
+
+		// reset timeout
+		  setting_mode_timeout_count = 0;
+
+	    if (cmdBuff.fullFlag != 1 && cmdBuff.count < RX_BUFF_SIZE) {
+	      // reception
+	      if (cmdBuff.buff[cmdBuff.count] == '\r') {
+	        // disable all interrupts
+	        status = HAL_UART_Abort(huart);
+	        assert_param(status == HAL_OK);
+
+	        // set command ready and reset pointer
+	        cmdBuff.cmdReady = 1;
+	        ptrBuff = &cmdBuff.buff[0];
+	      }
+	      else if (cmdBuff.buff[cmdBuff.count] == '\177') { // backspace
+	        // increment pointer and count
+	        if (cmdBuff.count != 0) { // check if pointer is not at zero index
+	        	cmdBuff.count--;
+	          ptrBuff--;
+	          backspace_ch = 1;
+	        }
+
+	        // start reception again
+	        status = HAL_UART_Receive_IT(&huart1, ptrBuff, sizeof(uint8_t));
+	        assert_param(status == HAL_OK);
+	      }
+	      else {
+	        // increment pointer and count
+	        ptrBuff++;
+	        cmdBuff.count++;
+
+	        // set character reflection
+	        reflect_ch = 1;
+
+	        // start reception again
+	        status = HAL_UART_Receive_IT(&huart1, ptrBuff, sizeof(uint8_t));
+	        assert_param(status == HAL_OK);
+	      }
+	    }
+	    else {
+	      // buffer is full abort and restart buffer
+	      status = HAL_UART_Abort(huart);
+	      assert_param(status == HAL_OK);
+
+	      cmdBuff.fullFlag = 1;
+	      ptrBuff = &cmdBuff.buff[0];
+	    }
+	  }
+}
+
+void extractCmd(uint8_t cmd[], uint8_t* cmdtype, uint8_t* cmdarg)
+{
+    uint8_t cmdtype_len = 0;
+    uint8_t i = 0;
+
+    // read command type until spacebar
+    while (cmdBuff.buff[i] != ' ' && cmdBuff.buff[i] != '\0') {
+      cmdtype[i] = cmdBuff.buff[i];
+      ++i;
+    }
+    cmdtype_len = i + 1; // the length of the command type
+    cmdtype[i] = '\0';
+    i++;
+
+    // read arguments
+    while (cmdBuff.buff[i] != ' ' && cmdBuff.buff[i] != '\0') {
+      cmdarg[i - cmdtype_len] = cmdBuff.buff[i];
+      i++;
+    }
+    cmdarg[i - cmdtype_len] = '\0';
+}
+
+int32_t ascii2hex_num(uint8_t src[])
+{
+  uint8_t  i          = 0;
+  uint32_t magnitude  = 1;
+  uint8_t  data_len   = 0;
+  uint8_t  isNeg      = 0;
+  // uint8_t  digits[10] = "0123456789";
+  int32_t  result     = 0;
+
+  // check for negative
+  if (src[i] == '-') {
+    isNeg = 1;
+    i++;
+    data_len = strlen(src) - 2;
+  }
+  else {
+    data_len = strlen(src) - 1;
+  }
+
+  // get magnitude
+  for (int j = 0; j < data_len; j++) {
+    magnitude *= 10;
+  }
+
+  while (src[i] != '\0') {
+	  result += magnitude * (int) (src[i] - '0');
+	  magnitude /= 10;
+	  i++;
+  }
+
+  if (isNeg) result = -result;
+
+  return result;
+
 }
 
 

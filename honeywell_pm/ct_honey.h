@@ -22,7 +22,7 @@ typedef struct __honey_t {
 
 
 /* Prototypes */
-void honey_init(UART_HandleTypeDef huart, honey_t* honey);
+honey_cmd_resp_t honey_init(UART_HandleTypeDef huart, honey_t* honey);
 honey_cmd_resp_t honey_start(honey_t* honey);
 honey_cmd_resp_t honey_stop(honey_t* honey);
 honey_cmd_resp_t honey_read(honey_t *honey);

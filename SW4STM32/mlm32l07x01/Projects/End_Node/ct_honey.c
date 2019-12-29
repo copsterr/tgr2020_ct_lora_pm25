@@ -12,7 +12,7 @@ uint8_t CMD_SETCOEF[5]   = { 0x68, 0x02, 0x08, 0x64, 0x2A }; // default coef is 
 
 
 /* APIs ----------------------------------------------------------------------*/
-void honey_init(UART_HandleTypeDef huart, honey_t* honey) {
+honey_cmd_resp_t honey_init(UART_HandleTypeDef huart, honey_t* honey) {
     /* 
         Init Honeywell Module
         params
@@ -29,9 +29,11 @@ void honey_init(UART_HandleTypeDef huart, honey_t* honey) {
     honey->customer_coef = 100; // default is 100
 
     //startup routine
-    honey_stop(honey);          // stop the fan
-    honey_autosend(honey, 0);   // stop autosend
-    honey_read_coef(honey);     // read and set customer coef to recent value
+    if (honey_stop(honey) != CMD_RESP_SUCCESS) return CMD_RESP_ERR;
+    if (honey_autosend(honey, 0) != CMD_RESP_SUCCESS) return CMD_RESP_ERR;
+    if (honey_read_coef(honey) != CMD_RESP_SUCCESS) return CMD_RESP_ERR;
+
+    return CMD_RESP_SUCCESS;
 }
 
 honey_cmd_resp_t honey_start(honey_t* honey) {
