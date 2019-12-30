@@ -266,34 +266,6 @@ int main(void)
   while (1)
   {
 	if (!setting_mode) {
-		// polling for user to press userbtn input
-		if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_2) == 0) {
-			HAL_Delay(1000); // debouncing prevention
-
-			PRINTF("\r\n[i] Entering Setting Mode...\r\n\r\n");
-
-			// stop txtimer and start elapsing timer
-			TimerStop(&TxTimer);
-			StartSettingModeElapsed();
-
-			setting_mode = 1; // change mode
-
-			// CLI variables init
-			status = HAL_OK;
-			cmdBuff.fullFlag = 0;
-			cmdBuff.cmdReady = 0;
-			cmdBuff.count    = 0;
-			memset(&cmdBuff.buff, 0x00, sizeof(cmdBuff.buff));
-
-			// begin reception
-			status = HAL_UART_Receive_IT(&huart1, &cmdBuff.buff[0], sizeof(uint8_t));
-			assert_param(status == HAL_OK);
-
-			// show prompt
-			status = HAL_UART_Transmit(&huart1, &prompt[0], sizeof(prompt), 100);
-			assert_param(status == HAL_OK);
-		}
-
 	/* Normal Mode Start ---------------------------------------------------- */
 		if (AppProcessRequest == LORA_SET)
 		{
@@ -323,9 +295,11 @@ int main(void)
 	     * and cortex will not enter low power anyway  */
 		if ((LoraMacProcessRequest != LORA_SET) && (AppProcessRequest != LORA_SET))
 		{
-#ifndef LOW_POWER_DISABLE
-    LPM_EnterLowPower();
-#endif
+
+		LPM_EnterLowPower();
+//#ifndef LOW_POWER_DISABLE
+//    LPM_EnterLowPower();
+//#endif
 	    }
 
 	    ENABLE_IRQ();
@@ -336,10 +310,16 @@ int main(void)
 		// timeout control
 		if (setting_mode_timeout_count == SETTING_MODE_TIMEOUT_COUNT_MAX) {
 			PRINTF("\r\n[i] SETTING MODE TIMEOUT, entering normal mode...\r\n");
+			status = HAL_UART_Transmit(&huart1, (uint8_t*) "\r\nSETTING MODE TIMEOUT, entering normal mode...\r\n", \
+				strlen("\r\nSETTING MODE TIMEOUT, entering normal mode...\r\n"), 100);
+			assert_param(status == HAL_OK);
+
 			TimerStop(&SettingTimer); // stop setting mode timer
 			TimerReset(&SettingTimer);
 			setting_mode = 0; // change mode to normal
 			LoraStartTx(TX_ON_TIMER); // start txtimer
+
+			LPM_EnterLowPower();
 		}
 
 /* CLI Control Start ---------------------------------------------------------*/
@@ -472,6 +452,8 @@ int main(void)
 					TimerReset(&SettingTimer);
 					setting_mode = 0; // change mode to normal
 					LoraStartTx(TX_ON_TIMER); // start txtimer
+
+					LPM_EnterLowPower();
 				}
 		        else {
 		          status = HAL_UART_Transmit_IT(&huart1, (uint8_t*) "\r\nCommand Error, Please retry.\r\n", \
@@ -862,16 +844,54 @@ static void OnTimerLedEvent(void *context)
 }
 #endif
 
+static void enterSettingMode(void *context)
+{
+	PRINTF("\r\n[i] Entering Setting Mode...\r\n\r\n");
+
+	// stop txtimer and start elapsing timer
+	TimerStop(&TxTimer);
+	StartSettingModeElapsed();
+
+	setting_mode = 1; // change mode
+
+	// CLI variables init
+	status = HAL_OK;
+	cmdBuff.fullFlag = 0;
+	cmdBuff.cmdReady = 0;
+	cmdBuff.count    = 0;
+	memset(&cmdBuff.buff, 0x00, sizeof(cmdBuff.buff));
+
+	// begin reception
+	status = HAL_UART_Receive_IT(&huart1, &cmdBuff.buff[0], sizeof(uint8_t));
+	assert_param(status == HAL_OK);
+
+	// show prompt
+	status = HAL_UART_Transmit(&huart1, &prompt[0], sizeof(prompt), 100);
+	assert_param(status == HAL_OK);
+}
+
 static void initUserBtn(void)
 {
-	GPIO_InitTypeDef GPIO_InitStruct = {0};
+	/* send everytime button is pushed */
+	GPIO_InitTypeDef initStruct = {0};
 
-	__HAL_RCC_GPIOB_CLK_ENABLE();
+	initStruct.Mode = GPIO_MODE_IT_RISING;
+	initStruct.Pull = GPIO_PULLUP;
+	initStruct.Speed = GPIO_SPEED_HIGH;
 
-	GPIO_InitStruct.Pin = GPIO_PIN_2;
-	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+	HW_GPIO_Init(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, &initStruct);
+	HW_GPIO_SetIrq(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, 0, enterSettingMode);
+
+//	GPIO_InitTypeDef GPIO_InitStruct = {0};
+//
+//	__HAL_RCC_GPIOB_CLK_ENABLE();
+//
+//	GPIO_InitStruct.Pin = GPIO_PIN_2;
+//	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+//	GPIO_InitStruct.Pull = GPIO_NOPULL;
+//	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+
 
 //	HAL_NVIC_SetPriority(EXTI2_3_IRQn, 0, 0);
 //	HAL_NVIC_EnableIRQ(EXTI2_3_IRQn);

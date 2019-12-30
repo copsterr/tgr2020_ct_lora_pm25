@@ -63,6 +63,8 @@
 "Middlewares/LoRaWAN/Utilities/trace.o"
 "Middlewares/LoRaWAN/Utilities/utilities.o"
 "Projects/End_Node/bsp.o"
+"Projects/End_Node/ct_honey.o"
+"Projects/End_Node/ct_usart.o"
 "Projects/End_Node/debug.o"
 "Projects/End_Node/hw_gpio.o"
 "Projects/End_Node/hw_rtc.o"
