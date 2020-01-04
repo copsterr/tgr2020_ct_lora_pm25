@@ -243,9 +243,6 @@ int main(void)
   volatile uint32_t time_tick = 0;
   volatile uint32_t time_ms = 0;
 
-  // init pm2.5 module
-  honey_init(hlpuart1, &honey);
-
 
   /* USER CODE END 1 */
 
@@ -261,6 +258,18 @@ int main(void)
   LORA_Join();
 
   LoraStartTx(TX_ON_TIMER);
+
+  // init pm2.5 module
+//  if (honey_init(hlpuart1, &honey) != CMD_RESP_SUCCESS) {
+//	  PRINTF("[e] Cannot init Honeywell Sensor!! Reinitializing...\r\n");
+//  } else {
+//	  PRINTF("[s] Honeywell init success!\r\n");
+//  }
+
+  	if (honey_init(hlpuart1, &honey) == CMD_RESP_ERR) {
+  		PRINTF("[e] ERROR\r\n");
+  	}
+
 
   // LOOP
   while (1)

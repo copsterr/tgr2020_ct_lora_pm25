@@ -38,7 +38,8 @@ Projects/End_Node/ct_honey.o: ../Projects/End_Node/ct_honey.c \
  ../../../../../../../../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_hal_uart_ex.h \
  ../../../../../../../../Drivers/BSP/B-L072Z-LRWAN1/b-l072z-lrwan1.h \
  ../../../Core/inc/mlm32l0xx_hw_conf.h \
- ../../../../../../../../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_rtc.h
+ ../../../../../../../../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_rtc.h \
+ ../../../LoRaWAN/App/inc/vcom.h
 
 C:/Users/siraphob/Documents/TGR2020/en.i-cube_lrwan/STM32CubeExpansion_LRWAN_V1.3.0/Projects/B-L072Z-LRWAN1/Applications/LoRa/End_Node/honeywell_pm/ct_honey.h:
 
@@ -119,3 +120,5 @@ C:/Users/siraphob/Documents/TGR2020/en.i-cube_lrwan/STM32CubeExpansion_LRWAN_V1.
 ../../../Core/inc/mlm32l0xx_hw_conf.h:
 
 ../../../../../../../../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_rtc.h:
+
+../../../LoRaWAN/App/inc/vcom.h:

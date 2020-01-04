@@ -46,8 +46,8 @@ honey_cmd_resp_t honey_start(honey_t* honey) {
     */
     uint8_t resp[2] = {0};
 
-	HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_STARTMEAS, 4, 500);
-    HAL_UART_Receive(&honey->huart, (uint8_t*) resp, 2, 500);
+	HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_STARTMEAS, 4, 100);
+    HAL_UART_Receive(&honey->huart, (uint8_t*) resp, 2, 100);
 
     if (resp[0] == 0xA5 && resp[1] == 0xA5) { // success is 0xA5A5
         return CMD_RESP_SUCCESS;
@@ -62,8 +62,8 @@ honey_cmd_resp_t honey_stop(honey_t* honey) {
     */
     uint8_t resp[2] = {0};
 
-    HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_STOPMEAS, 4, 500);
-    HAL_UART_Receive(&honey->huart, (uint8_t*) resp, 2, 500);
+    HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_STOPMEAS, 4, 100);
+    HAL_UART_Receive(&honey->huart, (uint8_t*) resp, 2, 100);
 
     if (resp[0] == 0xA5 && resp[1] == 0xA5) {
         return CMD_RESP_SUCCESS;
@@ -78,8 +78,8 @@ honey_cmd_resp_t honey_read(honey_t *honey) {
     */
     uint8_t resp[8] = {0};
 
-    HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_READMEAS, 4, 500);
-    HAL_UART_Receive(&honey->huart, (uint8_t*) resp, 8, 500);
+    HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_READMEAS, 4, 100);
+    HAL_UART_Receive(&honey->huart, (uint8_t*) resp, 8, 100);
 
     if (resp[0] == 0x40 && resp[1] == 0x05 && resp[2] == 0x04) {
         honey->pm2_5 = resp[3] * 256 + resp[4];
@@ -104,15 +104,15 @@ honey_cmd_resp_t honey_autosend(honey_t *honey, uint8_t mode) {
     uint8_t resp[2] = {0};
 
     if (mode == 0) { // stop autosend
-        HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_AUTOSTOP, 4, 500);
+        HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_AUTOSTOP, 4, 100);
     } else if (mode == 1) { // enable autosend
-        HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_AUTOEN, 4, 500);
+        HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_AUTOEN, 4, 100);
     } else {
         return CMD_RESP_BAD;
     }
     
     // receiving response
-    HAL_UART_Receive(&honey->huart, (uint8_t*) resp, 2, 500);
+    HAL_UART_Receive(&honey->huart, (uint8_t*) resp, 2, 100);
 
     if (resp[0] == 0xA5 && resp[1] == 0xA5) {
         return CMD_RESP_SUCCESS;
@@ -145,8 +145,8 @@ honey_cmd_resp_t honey_set_coef(honey_t *honey, uint8_t coef) {
     cs = calc_cs(CMD_SETCOEF, 5);
     CMD_SETCOEF[4] = cs;
 
-    HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_SETCOEF, 5, 500);
-    HAL_UART_Receive(&honey->huart, (uint8_t*) resp, 2, 500);
+    HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_SETCOEF, 5, 100);
+    HAL_UART_Receive(&honey->huart, (uint8_t*) resp, 2, 100);
 
     if (resp[0] == 0xA5 && resp[1] == 0xA5) {
         return CMD_RESP_SUCCESS;
@@ -162,7 +162,7 @@ honey_cmd_resp_t honey_read_coef(honey_t* honey) {
     */
     uint8_t resp[5] = {0};
 
-    HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_READCOEF, 4, 500);
+    HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_READCOEF, 4, 100);
     HAL_UART_Receive(&honey->huart, (uint8_t*) resp, 5, 100);
 
     if (resp[0] == 0x40 && resp[1] == 0x02 && resp[2] == 0x10) {
