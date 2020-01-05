@@ -185,6 +185,7 @@ volatile uint8_t setting_mode_timeout_count = 0;
 // honey vars
 #define HONEY_WARMUP_DURATION 10000
 honey_t honey;
+uint8_t sensor_error = 0;
 
 /* CLI VARS Begin ------------------------------------------------------------*/
 #define RX_BUFF_SIZE 80
@@ -261,6 +262,7 @@ int main(void)
 
   	if (honey_init(hlpuart1, &honey) != CMD_RESP_SUCCESS) {
   		PRINTF("[e] ERROR! Cannot init Honeywell Sensor.\r\n");
+  		sensor_error = 1;
   	}
 
   // LOOP
@@ -273,15 +275,23 @@ int main(void)
 		  /*reset notification flag*/
 		  AppProcessRequest = LORA_RESET;
 		  /*Send*/
-		  PRINTF("STARTING UP PM2.5 MEASUREMENT...\r\n");
-		  honey_start(&honey);
-		  HAL_Delay(HONEY_WARMUP_DURATION);
+		  if (!sensor_error) {
+			  PRINTF("STARTING UP PM2.5 MEASUREMENT...\r\n");
+			  honey_start(&honey);
+			  HAL_Delay(HONEY_WARMUP_DURATION);
 
-		  PRINTF("Transmitting PM2.5 Concentration...\r\n");
-		  Send(NULL);
+			  PRINTF("Transmitting PM2.5 Concentration...\r\n");
+			  Send(NULL);
 
-		  honey_stop(&honey);
-		  PRINTF("---TRANSMISSION COMPLETED---\r\n");
+			  honey_stop(&honey);
+			  PRINTF("---TRANSMISSION COMPLETED---\r\n");
+		  }
+		  else {
+			  PRINTF("Sensor is broken..\r\n");
+			  Send(NULL);
+			  PRINTF("---TRANSMISSION COMPLETED---\r\n");
+		  }
+
 		}
 		if (LoraMacProcessRequest == LORA_SET)
 		{
@@ -518,7 +528,7 @@ static void Send(void *context)
 //  sensor_t sensor_data;
   uint8_t  batteryLevel;
   uint16_t pm2_5;			// pm2.5 concentration
-  uint8_t  sensor_err = 0;  // if sensor has error
+  uint8_t  sensor_read_err = 0;  // if sensor has error
   uint8_t  lowBatt = 0; 	// Indicates that battery is low
 
   if (LORA_JoinStatus() != LORA_SET)
@@ -546,16 +556,20 @@ static void Send(void *context)
 
 //  BSP_sensor_Read(&sensor_data);
 
-  // read pm2.5 from Honeywell sensor
-  if (honey_read(&honey) == CMD_RESP_SUCCESS) {
-	  PRINTF("[s] Read PM2.5 Success!\r\n");
-	  pm2_5 = honey.pm2_5;
-	  if (pm2_5 == 191) {
-		  pm2_5 = 190;
+  if (!sensor_error) {
+
+	  // read pm2.5 from Honeywell sensor
+	  if (honey_read(&honey) == CMD_RESP_SUCCESS) {
+		  PRINTF("[s] Read PM2.5 Success!\r\n");
+		  pm2_5 = honey.pm2_5;
+		  if (pm2_5 == 191) {
+			  pm2_5 = 190;
+		  }
+	  } else {
+		  PRINTF("[e] Read PM2.5 Error!\r\n");
+		  sensor_read_err = 1;
 	  }
-  } else {
-	  PRINTF("[e] Read PM2.5 Error!\r\n");
-	  sensor_err = 1;
+
   }
 
 #ifdef CAYENNE_LPP
@@ -613,8 +627,9 @@ static void Send(void *context)
   AppData.Port = LORAWAN_APP_PORT;
 
 #if defined( REGION_US915 ) || defined ( REGION_AU915 ) || defined ( REGION_AS923 )
-  if (lowBatt || sensor_err) {
+  if (lowBatt || sensor_read_err || sensor_error) {
 	// if sensor is error or battery is low send 191
+	PRINTF("Something went wrong. Sending 191...\r\n");
 	AppData.Buff[i++] = 17;
 	AppData.Buff[i++] = 191;
   } else {
