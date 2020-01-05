@@ -174,7 +174,7 @@ UART_HandleTypeDef hlpuart1;
 TIM_HandleTypeDef  htim6;
 
 //#define SEND_GEO_DATA // for sending only geo data
-#define DATA_TOGGLING // for toggling data sending between pm2.5 and geolocation
+//#define DATA_TOGGLING // for toggling data sending between pm2.5 and geolocation
 uint8_t send_pm_toggler = 1;
 
 // mode control
@@ -235,7 +235,7 @@ int main(void)
   // Init connectivity peripherals
   initTim6();
   initUart1();
-  initLpUart1();
+//  initLpUart1();
   initUserBtn();
 
   /* USER CODE BEGIN 1 */
@@ -259,15 +259,8 @@ int main(void)
 
   LoraStartTx(TX_ON_TIMER);
 
-  // init pm2.5 module
-//  if (honey_init(hlpuart1, &honey) != CMD_RESP_SUCCESS) {
-//	  PRINTF("[e] Cannot init Honeywell Sensor!! Reinitializing...\r\n");
-//  } else {
-//	  PRINTF("[s] Honeywell init success!\r\n");
-//  }
-
-  	if (honey_init(hlpuart1, &honey) == CMD_RESP_ERR) {
-  		PRINTF("[e] ERROR\r\n");
+  	if (honey_init(huart1, &honey) != CMD_RESP_SUCCESS) {
+  		PRINTF("[e] ERROR! Cannot init Honeywell Sensor.\r\n");
   	}
 
 
@@ -289,7 +282,7 @@ int main(void)
 		  Send(NULL);
 
 		  honey_stop(&honey);
-		  PRINTF("TRANSMISSION COMPLETED.\r\n");
+		  PRINTF("---TRANSMISSION COMPLETED---\r\n");
 		}
 		if (LoraMacProcessRequest == LORA_SET)
 		{
@@ -889,7 +882,7 @@ static void initUserBtn(void)
 	initStruct.Speed = GPIO_SPEED_HIGH;
 
 	HW_GPIO_Init(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, &initStruct);
-	HW_GPIO_SetIrq(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, 0, enterSettingMode);
+	HW_GPIO_SetIrq(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, 1, enterSettingMode);
 
 //	GPIO_InitTypeDef GPIO_InitStruct = {0};
 //

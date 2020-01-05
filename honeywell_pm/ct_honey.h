@@ -1,5 +1,3 @@
-//#include "main.h"
-//#include "stm32l0xx_hal.h"
 #include "hw_conf.h"
 
 /* Honey Command Response Enumerations */
