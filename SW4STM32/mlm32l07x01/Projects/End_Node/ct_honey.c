@@ -63,14 +63,14 @@ honey_cmd_resp_t honey_stop(honey_t* honey) {
     uint8_t resp[2] = {0};
 
     HAL_UART_Transmit(&honey->huart, (uint8_t*) CMD_STOPMEAS, 4, 100);
-    HAL_UART_Receive_IT(&honey->huart, (uint8_t*) resp, 2);
+    HAL_UART_Receive(&honey->huart, (uint8_t*) resp, 2, 100);
 
     if (resp[0] == 0xA5 && resp[1] == 0xA5) {
         return CMD_RESP_SUCCESS;
     }
     
-    // stop interrupts
-    HAL_UART_Abort(&honey->huart);
+//    // stop interrupts
+//    HAL_UART_Abort(&honey->huart);
 
     return CMD_RESP_ERR;
 }

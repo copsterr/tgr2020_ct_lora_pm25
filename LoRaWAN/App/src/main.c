@@ -235,7 +235,7 @@ int main(void)
   // Init connectivity peripherals
   initTim6();
   initUart1();
-//  initLpUart1();
+  initLpUart1();
   initUserBtn();
 
   /* USER CODE BEGIN 1 */
@@ -259,10 +259,9 @@ int main(void)
 
   LoraStartTx(TX_ON_TIMER);
 
-  	if (honey_init(huart1, &honey) != CMD_RESP_SUCCESS) {
+  	if (honey_init(hlpuart1, &honey) != CMD_RESP_SUCCESS) {
   		PRINTF("[e] ERROR! Cannot init Honeywell Sensor.\r\n");
   	}
-
 
   // LOOP
   while (1)
@@ -846,6 +845,39 @@ static void OnTimerLedEvent(void *context)
 }
 #endif
 
+static void initTim6(void)
+{
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 47999;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 999;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
+{
+  if(htim_base->Instance==TIM6)
+  {
+    /* Peripheral clock enable */
+    __HAL_RCC_TIM6_CLK_ENABLE();
+    /* TIM6 interrupt Init */
+    HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
+  }
+}
+
 static void enterSettingMode(void *context)
 {
 	PRINTF("\r\n[i] Entering Setting Mode...\r\n\r\n");
@@ -882,23 +914,24 @@ static void initUserBtn(void)
 	initStruct.Speed = GPIO_SPEED_HIGH;
 
 	HW_GPIO_Init(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, &initStruct);
-	HW_GPIO_SetIrq(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, 1, enterSettingMode);
+	HW_GPIO_SetIrq(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, 0, enterSettingMode);
+}
 
-//	GPIO_InitTypeDef GPIO_InitStruct = {0};
-//
-//	__HAL_RCC_GPIOB_CLK_ENABLE();
-//
-//	GPIO_InitStruct.Pin = GPIO_PIN_2;
-//	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-//	GPIO_InitStruct.Pull = GPIO_NOPULL;
-//	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-
-
-//	HAL_NVIC_SetPriority(EXTI2_3_IRQn, 0, 0);
-//	HAL_NVIC_EnableIRQ(EXTI2_3_IRQn);
-//	HW_GPIO_Init(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, &GPIO_InitStruct);
-//	HW_GPIO_SetIrq(USER_BUTTON_GPIO_PORT, USER_BUTTON_PIN, 0, printStuff);
+static void initLpUart1(void)
+{
+  hlpuart1.Instance = LPUART1;
+  hlpuart1.Init.BaudRate = 9600;
+  hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
+  hlpuart1.Init.StopBits = UART_STOPBITS_1;
+  hlpuart1.Init.Parity = UART_PARITY_NONE;
+  hlpuart1.Init.Mode = UART_MODE_TX_RX;
+  hlpuart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  hlpuart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  hlpuart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&hlpuart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
 }
 
 static void initUart1(void)
@@ -917,56 +950,6 @@ static void initUart1(void)
 	{
 		Error_Handler();
 	}
-}
-
-static void initTim6(void)
-{
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 47999;
-  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 999;
-  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
-  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-}
-
-void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
-{
-  if(htim_base->Instance==TIM6)
-  {
-    /* Peripheral clock enable */
-    __HAL_RCC_TIM6_CLK_ENABLE();
-    /* TIM6 interrupt Init */
-    HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 1, 0);
-    HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
-  }
-}
-
-static void initLpUart1(void)
-{
-  hlpuart1.Instance = LPUART1;
-  hlpuart1.Init.BaudRate = 9600;
-  hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
-  hlpuart1.Init.StopBits = UART_STOPBITS_1;
-  hlpuart1.Init.Parity = UART_PARITY_NONE;
-  hlpuart1.Init.Mode = UART_MODE_TX_RX;
-  hlpuart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  hlpuart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  hlpuart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&hlpuart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
 }
 
 void USART1_IRQHandler(void)
